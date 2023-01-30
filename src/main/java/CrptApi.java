@@ -1,26 +1,25 @@
-package main.java;
-
 import org.codehaus.jackson.annotate.JsonProperty;
 import org.codehaus.jackson.map.ObjectMapper;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.KeyFactory;
-import java.security.Signature;
+import java.security.*;
+import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
-
 public class CrptApi {
+
+    private static Logger logger = Logger.getLogger(String.valueOf(CrptApi.class));
     private final int requestLimit;
-    Logger logger;
     private final TokenBucket tokenBucket;
+
+    private static final String stringUrl = "https://markirovka.crpt.ru/api/v3/true-api/lk/documents/create";
 
     public CrptApi(TimeUnit timeUnit, int requestLimit) {
         if (requestLimit >= 0) {
@@ -44,34 +43,26 @@ public class CrptApi {
             this.availableTokens = permits;
         }
 
-        synchronized public boolean tryConsume(int permits) {
+        public synchronized boolean tryConsume(int permits) {
             refill();
             if (this.availableTokens < permits) {
-                System.out.println("false");
                 return false;
             } else {
                 this.availableTokens -= permits;
-                System.out.println("true");
                 return true;
             }
         }
 
         private void refill() {
-            long now = System.nanoTime();
-            long nanosSinceLastRefill = now - lastRefillNanotime;
+            var now = System.nanoTime();
+            var nanosSinceLastRefill = now - lastRefillNanotime;
             if (nanosSinceLastRefill <= nanosToGenerationToken) {
                 return;
             }
 
-            long tokensSinceLastRefill = nanosSinceLastRefill / nanosToGenerationToken;
+            var tokensSinceLastRefill = nanosSinceLastRefill / nanosToGenerationToken;
             availableTokens = Math.min(capacity, availableTokens + tokensSinceLastRefill);
             lastRefillNanotime += tokensSinceLastRefill * nanosToGenerationToken;
-        }
-    }
-
-    public class UidInputException extends RuntimeException {
-        public UidInputException(String message) {
-            super(message);
         }
     }
 
@@ -105,7 +96,7 @@ public class CrptApi {
             } else if (!uituCode.isBlank()) {
                 this.uituCode = uituCode;
             } else {
-                throw new UidInputException("Не указаны уникальные идентификаторы");
+                throw new IllegalArgumentException("Не указаны уникальные идентификаторы");
             }
         }
 
@@ -192,19 +183,15 @@ public class CrptApi {
         }
     }
 
-    public boolean createDocument(Document document, String signature) throws Exception {
+    public void createDocument(Document document, String signature) throws Exception {
 
-        HttpURLConnection connection;
         URL url;
+        HttpURLConnection connection;
 
         if (tokenBucket.tryConsume(requestLimit)) {
 
             try {
-                url = new URL("https://markirovka.crpt.ru/api/v3/true-api/lk/documents/create");
-            } catch (MalformedURLException e) {
-                throw new RuntimeException(e);
-            }
-            try {
+                url = new URL(stringUrl);
                 connection = (HttpURLConnection) url.openConnection();
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -216,11 +203,11 @@ public class CrptApi {
             connection.setDoOutput(true);
 
             String documentAsString = getObjectAsString(document);
-            String documentXML64 = Base64.getEncoder().encodeToString(documentAsString.getBytes());
+            String documentJson64 = Base64.getEncoder().encodeToString(documentAsString.getBytes());
             String signedDocument = signSHA256RSA(documentAsString, signature);
             Map<String, String> bodyRequest = new HashMap<>();
             bodyRequest.put("document_format", "MANUAL");
-            bodyRequest.put("product_document", documentXML64);
+            bodyRequest.put("product_document", documentJson64);
             bodyRequest.put("signature", signedDocument);
             bodyRequest.put("type", "SETS_AGGREGATION");
             bodyRequest.put("product_group", "group_of_goods"); // группа товара
@@ -232,17 +219,12 @@ public class CrptApi {
             }
 
             if (connection.getResponseCode() != 200) {
-                logger.warning("Не удалось выполнить ввод оборота");
-                return false;
-            }
-            System.out.println(bodyAsString);
-
-            return true;
-        }
-        return false;
+                logger.warning("Не удалось выполнить ввод оборота");                
+            }           
+        }      
     }
 
-    private String signSHA256RSA(String input, String signature) throws Exception {
+    private String signSHA256RSA(String input, String signature) throws NoSuchAlgorithmException, InvalidKeySpecException, SignatureException, InvalidKeyException {
 
         byte[] b1 = Base64.getDecoder().decode(signature);
         PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(b1);
@@ -250,7 +232,7 @@ public class CrptApi {
 
         Signature privateSignature = Signature.getInstance("SHA256withRSA");
         privateSignature.initSign(kf.generatePrivate(spec));
-        privateSignature.update(input.getBytes("UTF-8"));
+        privateSignature.update(input.getBytes(StandardCharsets.UTF_8));
         byte[] s = privateSignature.sign();
         return Base64.getEncoder().encodeToString(s);
     }
