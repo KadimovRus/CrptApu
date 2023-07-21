@@ -23,6 +23,8 @@ public class CrptApi {
 
     private int myValue = 123;
 
+    private String myString = "fasdf";
+
     public CrptApi(TimeUnit timeUnit, int requestLimit) {
         if (requestLimit >= 0) {
             this.requestLimit = requestLimit;
