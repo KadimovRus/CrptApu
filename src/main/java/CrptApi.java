@@ -15,11 +15,13 @@ import java.util.logging.Logger;
 
 public class CrptApi {
 
-    private static Logger logger = Logger.getLogger(String.valueOf(CrptApi.class));
+    private static final Logger LOGGER = Logger.getLogger(String.valueOf(CrptApi.class));
     private final int requestLimit;
     private final TokenBucket tokenBucket;
 
-    private static final String stringUrl = "https://markirovka.crpt.ru/api/v3/true-api/lk/documents/create";
+    private static final String STRING_URL = "https://markirovka.crpt.ru/api/v3/true-api/lk/documents/create";
+
+    private int myValue = 123;
 
     public CrptApi(TimeUnit timeUnit, int requestLimit) {
         if (requestLimit >= 0) {
@@ -191,7 +193,7 @@ public class CrptApi {
         if (tokenBucket.tryConsume(requestLimit)) {
 
             try {
-                url = new URL(stringUrl);
+                url = new URL(STRING_URL);
                 connection = (HttpURLConnection) url.openConnection();
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -210,7 +212,7 @@ public class CrptApi {
             bodyRequest.put("product_document", documentJson64);
             bodyRequest.put("signature", signedDocument);
             bodyRequest.put("type", "SETS_AGGREGATION");
-            bodyRequest.put("product_group", "group_of_goods"); // группа товара
+            bodyRequest.put("product_group", "group_of_goods");
             String bodyAsString = getObjectAsString(bodyRequest);
 
             try (OutputStream os = connection.getOutputStream()) {
@@ -219,7 +221,7 @@ public class CrptApi {
             }
 
             if (connection.getResponseCode() != 200) {
-                logger.warning("Не удалось выполнить ввод оборота");                
+                LOGGER.warning("Не удалось выполнить ввод оборота");
             }           
         }      
     }
